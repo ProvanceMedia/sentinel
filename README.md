@@ -1,8 +1,15 @@
+```
+███████╗███████╗███╗   ██╗████████╗██╗███╗   ██╗███████╗██╗
+██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗  ██║██╔════╝██║
+███████╗█████╗  ██╔██╗ ██║   ██║   ██║██╔██╗ ██║█████╗  ██║
+╚════██║██╔══╝  ██║╚██╗██║   ██║   ██║██║╚██╗██║██╔══╝  ██║
+███████║███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████╗███████╗
+╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝
+```
+
 <div align="center">
 
-# 🛡️ Sentinel
-
-**Your own AI agent — running on your Claude subscription, sandboxed so it can't leak your secrets or touch your machine.**
+**🛡️ Your own AI agent — running on your Claude subscription, sandboxed so it can't leak your secrets or touch your machine.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](./LICENSE)
 &nbsp;built on the [Claude Agent SDK](https://github.com/anthropics/claude-agent-sdk-typescript)
