@@ -46,6 +46,9 @@ export async function startSlack(): Promise<SlackSurface> {
     } catch {
       /* ignore */
     }
+    if (process.env.SENTINEL_SLACK_DEBUG === 'on') {
+      console.error(`[slack] event type=${event?.type} subtype=${event?.subtype ?? '-'} ch_type=${event?.channel_type ?? '-'} user=${event?.user ?? '-'} bot=${event?.bot_id ? 'y' : 'n'}`);
+    }
     try {
       await handle(event);
     } catch (e: any) {
@@ -54,6 +57,8 @@ export async function startSlack(): Promise<SlackSurface> {
   };
   sm.on('message', onEvent);
   sm.on('app_mention', onEvent);
+  // Assistant-surface events (only fire if the app's "Agents & AI Apps" feature is ON).
+  sm.on('assistant_thread_started', onEvent);
 
   async function handle(event: any): Promise<void> {
     if (!event || event.bot_id || event.subtype || event.user === botUserId) return; // ignore bots / edits / self
