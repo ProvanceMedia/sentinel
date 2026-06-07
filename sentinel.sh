@@ -30,6 +30,26 @@ ok(){   printf "  ${cG}OK${c0} %s\n" "$*"; }
 warn(){ printf "  ${cY}!!${c0} %s\n" "$*"; }
 die(){  printf "\n${cR}xx FAILED: %s${c0}\n" "$*"; printf "${cY}Fix and re-run ./sentinel.sh, or ask Claude: \"sentinel install failed at: %s\"${c0}\n" "$*"; exit 1; }
 
+banner(){
+  local lines=(
+'███████╗███████╗███╗   ██╗████████╗██╗███╗   ██╗███████╗██╗'
+'██╔════╝██╔════╝████╗  ██║╚══██╔══╝██║████╗  ██║██╔════╝██║'
+'███████╗█████╗  ██╔██╗ ██║   ██║   ██║██╔██╗ ██║█████╗  ██║'
+'╚════██║██╔══╝  ██║╚██╗██║   ██║   ██║██║╚██╗██║██╔══╝  ██║'
+'███████║███████╗██║ ╚████║   ██║   ██║██║ ╚████║███████╗███████╗'
+'╚══════╝╚══════╝╚═╝  ╚═══╝   ╚═╝   ╚═╝╚═╝  ╚═══╝╚══════╝╚══════╝'
+  )
+  local colors=(51 45 39 33 27 21) i tty=0
+  [ -t 1 ] && [ -z "${NO_COLOR:-}" ] && tty=1
+  echo
+  for i in 0 1 2 3 4 5; do
+    if [ "$tty" -eq 1 ]; then printf '  \033[1;38;5;%sm%s\033[0m\n' "${colors[$i]}" "${lines[$i]}"
+    else printf '  %s\n' "${lines[$i]}"; fi
+  done
+  if [ "$tty" -eq 1 ]; then printf '\n  \033[38;5;45m🛡  a personal AI agent on your Claude subscription \033[2m— sandboxed so it cannot leak your secrets.\033[0m\n'
+  else printf '\n  a personal AI agent on your Claude subscription — sandboxed.\n'; fi
+}
+
 confirm(){ # confirm "question" -> 0 (yes) / 1 (no). --yes auto-yes; --non-interactive without --yes declines.
   [ "$ASSUME_YES" -eq 1 ] && return 0
   [ "$NONINTERACTIVE" -eq 1 ] && return 1
@@ -67,7 +87,8 @@ install_node(){
   else die "couldn't auto-install Node — install Node>=20 manually (https://nodejs.org)"; fi
 }
 
-step "Sentinel installer  (dir: $DIR)"
+banner
+printf "  ${cY}installing into${c0} %s\n" "$DIR"
 
 # 1) Prerequisites (auto-installed when missing)
 step "Checking prerequisites"
