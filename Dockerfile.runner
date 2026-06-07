@@ -1,0 +1,36 @@
+# Generic, persona-free, secret-free runner image — the only SDK importer.
+# Pinned base; non-root uid 10001. Built by: npm run build:image
+FROM node:22-slim
+
+WORKDIR /app
+
+# System tools the agent can use directly: curl, git, and the GitHub CLI (gh).
+# ca-certificates gives a real system trust store (the slim base ships none).
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl git gnupg \
+ && mkdir -p -m 755 /etc/apt/keyrings \
+ && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg -o /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ && chmod go+r /etc/apt/keyrings/githubcli-archive-keyring.gpg \
+ && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
+ && apt-get update && apt-get install -y --no-install-recommends gh \
+ && rm -rf /var/lib/apt/lists/*
+
+# Trust Sentinel's auth-proxy CA so curl/gh/git accept the proxy's TLS for allowlisted
+# hosts (the proxy injects the real credential; the container only ever holds a placeholder).
+COPY certs/sentinel-ca.crt /usr/local/share/ca-certificates/sentinel-ca.crt
+RUN update-ca-certificates
+ENV NODE_EXTRA_CA_CERTS=/usr/local/share/ca-certificates/sentinel-ca.crt
+
+# Deps the runner needs: the Agent SDK, the Claude Code CLI it drives, zod, tsx.
+COPY package.json ./
+RUN npm install --omit=dev --no-audit --no-fund \
+ && npm install --no-audit --no-fund tsx@^4.19.2 @anthropic-ai/claude-code@2.1.159
+
+COPY tsconfig.json ./
+COPY src/shared ./src/shared
+COPY src/runner ./src/runner
+
+# Non-root. /session and /run/sentinel are bind-mounted rw at runtime.
+RUN useradd -u 10001 -m -d /home/sentinel sentinel || true
+USER 10001:10001
+
+ENTRYPOINT ["node_modules/.bin/tsx", "src/runner/agent-runner.ts"]

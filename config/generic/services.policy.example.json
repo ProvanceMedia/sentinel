@@ -1,0 +1,32 @@
+{
+  "github": {
+    "description": "Authenticated call to the GitHub API (https://api.github.com). Provide method + path (+ optional JSON body). Example path: repos/OWNER/REPO/commits?per_page=5",
+    "method": "${ARG:method}",
+    "url": "https://api.github.com/${ARG:path}",
+    "headers": { "Authorization": "Bearer ${VAULT:GITHUB_PAT}", "User-Agent": "sentinel", "Accept": "application/vnd.github+json" },
+    "params": {
+      "method": { "type": "string", "description": "GET/POST/PATCH/DELETE", "optional": true },
+      "path": { "type": "string", "description": "path after the host, e.g. repos/owner/repo/issues" },
+      "body": { "type": "string", "description": "JSON body for writes", "optional": true }
+    }
+  },
+  "example_bearer": {
+    "description": "Pattern: an API that authenticates with a Bearer token (host injects it).",
+    "method": "${ARG:method}",
+    "url": "https://api.example.com/${ARG:path}",
+    "headers": { "Authorization": "Bearer ${VAULT:EXAMPLE_API_KEY}" },
+    "params": { "method": { "type": "string", "optional": true }, "path": { "type": "string" }, "body": { "type": "string", "optional": true } }
+  },
+  "example_query_auth": {
+    "description": "Pattern: an API that authenticates with a ?api_key= query param (host adds it).",
+    "url": "https://api.example.com/${ARG:path}",
+    "query": { "api_key": "${VAULT:EXAMPLE_API_KEY}" },
+    "params": { "path": { "type": "string" } }
+  },
+  "example_basic_auth": {
+    "description": "Pattern: an API using HTTP Basic auth (key as username, empty password).",
+    "url": "https://api.example.com/${ARG:path}",
+    "basicAuth": "${VAULT:EXAMPLE_API_KEY}:",
+    "params": { "path": { "type": "string" } }
+  }
+}

@@ -1,0 +1,25 @@
+[Unit]
+Description=Sentinel agent
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+WorkingDirectory=__DIR__
+EnvironmentFile=__DIR__/.env
+Environment=ANTHROPIC_API_KEY=
+Environment=SENTINEL_RUNNER_MODE=docker
+# Install deps before each start so a 'git pull' that adds a dependency can't
+# crash-loop the service. Leading '-' = don't block startup if npm has a transient
+# hiccup (deps already present still run fine).
+ExecStartPre=-/usr/bin/env npm install --no-audit --no-fund
+# Run tsx directly (not via `npm run`) so MAINPID is the node process — that way signals
+# reach it: SIGHUP = hot-reload the vault + auth-hosts (used by `npm run connect`).
+ExecStart=__DIR__/node_modules/.bin/tsx __DIR__/src/main.ts
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=always
+RestartSec=5
+KillMode=mixed
+
+[Install]
+WantedBy=multi-user.target

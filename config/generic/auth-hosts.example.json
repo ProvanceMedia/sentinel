@@ -1,0 +1,18 @@
+{
+  "api.github.com": {
+    "scheme": "bearer",
+    "vaultKey": "GITHUB_PAT",
+    "extraHeaders": { "Accept": "application/vnd.github+json", "User-Agent": "sentinel" }
+  },
+  "api.example.com": { "scheme": "bearer", "vaultKey": "EXAMPLE_API_KEY" },
+  "keyed.example.com": { "scheme": "header", "headerName": "X-API-Key", "vaultKey": "EXAMPLE_API_KEY" },
+  "query.example.com": { "scheme": "query", "queryParam": "api_key", "vaultKey": "EXAMPLE_API_KEY" },
+  "basic.example.com": { "scheme": "basic", "vaultKey": "EXAMPLE_API_KEY", "basicPassword": "" },
+  "oauth.example.com": {
+    "scheme": "oauth2",
+    "tokenUrl": "https://oauth2.example.com/token",
+    "clientIdKey": "EXAMPLE_OAUTH_CLIENT_ID",
+    "clientSecretKey": "EXAMPLE_OAUTH_CLIENT_SECRET",
+    "refreshTokenKey": "EXAMPLE_OAUTH_REFRESH_TOKEN"
+  }
+}

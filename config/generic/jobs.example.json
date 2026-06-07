@@ -1,0 +1,16 @@
+[
+  {
+    "id": "morning-brief",
+    "cron": "30 6 * * 1-5",
+    "deliverTo": "C0XXXXXXXXX",
+    "description": "Weekday morning brief",
+    "prompt": "Give me a concise morning brief: anything I asked you to follow up on, plus 2-3 things worth my attention today. Keep it short and skimmable."
+  },
+  {
+    "id": "hourly-nudge",
+    "everySeconds": 3600,
+    "deliverTo": "U0XXXXXXXXX",
+    "description": "Example interval job that DMs you",
+    "prompt": "If there's anything time-sensitive in what you know about me, flag it in one line. Otherwise reply with exactly: NO_REPLY"
+  }
+]
