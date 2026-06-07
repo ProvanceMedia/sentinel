@@ -8,14 +8,14 @@ export function registerCronTools(): void {
     {
       name: 'sentinel_cron_create',
       description:
-        'Schedule a job: a prompt to run later. One-off (runInSeconds), simple repeat (everySeconds), or a cron expression (cron, e.g. "30 6 * * 1-5" = 06:30 on weekdays). Optionally deliver the result to a Slack channel/user (deliverTo). Choose `model` by the job\'s load: high-frequency or simple jobs → claude-haiku-4-5; infrequent + reasoning-heavy → claude-opus-4-8; omit to use the default. Returns the job id.',
+        'Schedule a job: a prompt to run later. One-off (runInSeconds), simple repeat (everySeconds), or a cron expression (cron, e.g. "30 6 * * 1-5" = 06:30 on weekdays). Optionally deliver the result to a Slack channel/user (deliverTo). Choose `model` by the job\'s load: simple/high-frequency → claude-haiku-4-5; general/moderate → claude-sonnet-4-6 (balanced); infrequent + reasoning-heavy → claude-opus-4-8; omit to inherit the base model. Returns the job id.',
       params: {
         prompt: { type: 'string', description: 'what the scheduled run should do (a full instruction to yourself)' },
         runInSeconds: { type: 'number', description: 'delay before a one-off run', optional: true },
         everySeconds: { type: 'number', description: 'simple repeat interval in seconds', optional: true },
         cron: { type: 'string', description: 'cron expression (5 fields); takes precedence over everySeconds', optional: true },
         deliverTo: { type: 'string', description: 'Slack channel id (C…) or user id (U…) to post the result to', optional: true },
-        model: { type: 'string', description: 'model for this job (claude-haiku-4-5 for frequent/simple, claude-opus-4-8 for thinky); omit for the default', optional: true },
+        model: { type: 'string', description: 'model: claude-haiku-4-5 (simple/frequent) | claude-sonnet-4-6 (balanced) | claude-opus-4-8 (reasoning-heavy); omit for the default', optional: true },
         description: { type: 'string', description: 'short human label', optional: true },
       },
     },

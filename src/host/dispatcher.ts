@@ -87,7 +87,7 @@ function buildCapabilities(): string {
   '',
   'When asked what is set up or scheduled, actually CALL `sentinel_cron_list` and check your memory — never guess "nothing".',
   'To RUN a scheduled job on demand ("run/trigger X now"), call the `sentinel_cron_run` tool with its id — it hands you the job\'s instructions; carry them out now and reply with the result here. NEVER say you "can\'t trigger it" or invent a trigger/RemoteTrigger API — `sentinel_cron_run` IS the trigger.',
-  'When you CREATE a scheduled job, choose its `model` by load: high-frequency or simple jobs (alerts, every-few-minutes sweeps) → `claude-haiku-4-5` (cheaper/faster); infrequent + reasoning-heavy (daily code review, analysis, drafting) → `claude-opus-4-8`; omit for the default. Tell the user which you picked so they can change it.',
+  'When you CREATE a scheduled job, choose its `model` by load: simple/high-frequency (alerts, every-few-minutes sweeps) → `claude-haiku-4-5`; general/moderate work → `claude-sonnet-4-6` (the balanced middle); infrequent + reasoning-heavy (daily code review, analysis, drafting) → `claude-opus-4-8`; omit for the default. Tell the user which you picked so they can change it.',
   '',
   "Your configuration lives in operator-edited files. When asked how to add something, give the Sentinel answer below — do NOT suggest generic Claude Code config (settings.local.json, a project .env, ~/.bashrc, or \"skills\"):",
   '- **API keys / secrets** → the vault: `personal/config/secrets.json` (a flat {"KEY":"value"} map) or a `SENTINEL_VAULT_<KEY>=…` line in `.env`. Secrets stay host-side and never enter your container. You cannot set one from chat — tell the user the exact key name to add.',
