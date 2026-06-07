@@ -50,6 +50,44 @@ banner(){
   else printf '\n  a personal AI agent on your Claude subscription — sandboxed.\n'; fi
 }
 
+# spin "label" cmd... — run cmd with an animated spinner; OK on success, log tail on failure.
+spin(){
+  local label="$1"; shift; local log="/tmp/sentinel-step.$$.log"
+  if [ ! -t 1 ] || [ -n "${NO_COLOR:-}" ]; then "$@" >"$log" 2>&1; local rc=$?; [ $rc -eq 0 ] && ok "$label" || tail -8 "$log"; rm -f "$log"; return $rc; fi
+  local frames=('⠋' '⠙' '⠹' '⠸' '⠼' '⠴' '⠦' '⠧' '⠇' '⠏') i=0
+  "$@" >"$log" 2>&1 & local pid=$!
+  while kill -0 "$pid" 2>/dev/null; do printf "\r  \033[36m%s\033[0m %s" "${frames[$((i % 10))]}" "$label"; i=$((i+1)); sleep 0.08; done
+  wait "$pid"; local rc=$?
+  if [ $rc -eq 0 ]; then printf "\r  ${cG}OK${c0} %s\033[K\n" "$label"; else printf "\r  ${cR}xx${c0} %s\033[K\n" "$label"; tail -8 "$log"; fi
+  rm -f "$log"; return $rc
+}
+
+# Closing "what's running" panel.
+success_panel(){
+  local rule; rule=$(printf '─%.0s' $(seq 1 56))
+  local model egress; model=$(grep -E '^SENTINEL_MODEL=' .env 2>/dev/null | head -1 | cut -d= -f2-); model=${model:-claude-haiku-4-5}
+  egress=$(grep -E '^SENTINEL_EGRESS=' .env 2>/dev/null | head -1 | cut -d= -f2-); egress=${egress:-bridge}
+  echo
+  printf "  ${cG}╭%s╮${c0}\n" "$rule"
+  printf "  ${cG}│${c0}  ${cG}✓${c0}  ${cB}Sentinel is live${c0}\n"
+  printf "  ${cG}│${c0}\n"
+  printf "  ${cG}│${c0}   model     %s\n" "$model"
+  printf "  ${cG}│${c0}   surface   %s\n" "${SURFACE:-cli}"
+  printf "  ${cG}│${c0}   sandbox   docker · egress %s\n" "$egress"
+  if [ "${SERVICE_RUNNING:-0}" -eq 1 ]; then printf "  ${cG}│${c0}   service   running (starts on boot)\n"
+  else printf "  ${cG}│${c0}   service   not installed\n"; fi
+  printf "  ${cG}│${c0}\n"
+  if [ "${SERVICE_RUNNING:-0}" -eq 1 ] && [ "$SURFACE" = "slack" ]; then
+    printf "  ${cG}│${c0}   ${cG}▸${c0} Slack is live — DM your bot or @mention it\n"
+  else
+    printf "  ${cG}│${c0}   ${cG}▸${c0} try it      ${cB}npm run sentinel -- 'hi'${c0}\n"
+    [ "$SURFACE" = "slack" ] && printf "  ${cG}│${c0}   ${cG}▸${c0} run the bot ${cB}npm run sentineld${c0}\n"
+  fi
+  printf "  ${cG}│${c0}   ${cG}▸${c0} add an API  ${cB}npm run connect api.example.com${c0}\n"
+  [ "$DO_JAIL" -eq 0 ] && printf "  ${cG}│${c0}   ${cG}▸${c0} harden      ${cB}sudo ./sentinel.sh --jail${c0}\n"
+  printf "  ${cG}╰%s╯${c0}\n\n" "$rule"
+}
+
 confirm(){ # confirm "question" -> 0 (yes) / 1 (no). --yes auto-yes; --non-interactive without --yes declines.
   [ "$ASSUME_YES" -eq 1 ] && return 0
   [ "$NONINTERACTIVE" -eq 1 ] && return 1
@@ -119,14 +157,14 @@ ok "docker $(docker --version | awk '{print $3}' | tr -d ,)"
 # 2) Dependencies
 step "Installing Node dependencies"
 if [ -d node_modules ] && [ "$REBUILD" -eq 0 ]; then ok "node_modules present (use --rebuild to reinstall)";
-else npm install --no-audit --no-fund || die "npm install"; ok "dependencies installed"; fi
+else spin "Installing dependencies" npm install --no-audit --no-fund || die "npm install"; fi
 
 # 3) Runner image
 step "Building the runner image (sentinel-runner:dev)"
 # Per-deployment CA for the auth-proxy — baked into the image (idempotent; skips if present).
 node_modules/.bin/tsx scripts/gen-ca.ts >/dev/null 2>&1 || warn "gen-ca skipped (auth-proxy will be unavailable)"
 if docker image inspect sentinel-runner:dev >/dev/null 2>&1 && [ "$REBUILD" -eq 0 ]; then ok "image present (use --rebuild to rebuild)";
-else docker build -f Dockerfile.runner -t sentinel-runner:dev . >/dev/null || die "docker build"; ok "image built"; fi
+else spin "Building runner image (gh/git/curl + CA)" docker build -f Dockerfile.runner -t sentinel-runner:dev . || die "docker build"; fi
 
 # 4) Subscription auth
 step "Setting up Claude subscription auth"
@@ -294,15 +332,5 @@ OUT="$(CLAUDE_CODE_OAUTH_TOKEN="$CLAUDE_CODE_OAUTH_TOKEN" ANTHROPIC_API_KEY= SEN
   npm run --silent sentinel -- "Reply with exactly: INSTALL-OK" 2>&1 || true)"
 if echo "$OUT" | grep -q "INSTALL-OK"; then ok "end-to-end OK — Sentinel answered from inside a container on your sub"; else warn "hello turn did not return INSTALL-OK:"; echo "$OUT" | tail -4; fi
 
-step "Done."
-if [ "$SERVICE_RUNNING" -eq 1 ]; then
-  printf "  ${cG}Sentinel is running as a service${c0} (and starts on boot).\n"
-  [ "$SURFACE" = "slack" ] && printf "  ${cG}Slack is live${c0} — DM your bot or @mention it.\n"
-  printf "    status:  ${cB}systemctl status sentinel${c0}\n"
-  printf "    logs:    ${cB}journalctl -u sentinel -f${c0}\n"
-  printf "    stop:    ${cB}systemctl stop sentinel${c0}\n"
-else
-  printf "  Try it:       ${cB}npm run sentinel -- 'hi'${c0}\n"
-  [ "$SURFACE" = "slack" ] && printf "  Run the bot:  ${cB}npm run sentineld${c0}   (or ${cB}sudo ./sentinel.sh --service${c0} to run it on boot)\n"
-fi
-[ "$DO_JAIL" -eq 0 ] && printf "  Harden egress: ${cB}sudo ./sentinel.sh --jail${c0}\n"
+success_panel
+[ "${SERVICE_RUNNING:-0}" -eq 1 ] && printf "  status ${cB}systemctl status sentinel${c0} · logs ${cB}journalctl -u sentinel -f${c0}\n\n"
