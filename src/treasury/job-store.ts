@@ -26,6 +26,7 @@ export interface Job {
   lastRun?: number;
   lastResult?: string;
   description?: string;
+  model?: string; // per-job model override (e.g. claude-haiku-4-5); falls back to SENTINEL_MODEL
   source?: 'config' | 'agent'; // 'config' = declared in jobs.json, 'agent' = created in chat
 }
 
@@ -53,6 +54,7 @@ export interface JobInput {
   cron?: string;
   deliverTo?: string;
   description?: string;
+  model?: string;
   source?: 'config' | 'agent';
 }
 
@@ -78,6 +80,7 @@ export function upsert(input: JobInput & { id: string; enabled?: boolean }): voi
     enabled: input.enabled ?? true,
     createdAt: i >= 0 ? jobs[i].createdAt : Date.now(),
     description: input.description,
+    model: input.model,
     source: input.source ?? (i >= 0 ? jobs[i].source : 'agent'),
   };
   if (i >= 0) jobs[i] = { ...jobs[i], ...base };

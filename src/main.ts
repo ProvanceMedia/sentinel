@@ -31,7 +31,7 @@ if (loaded) console.error(`[sentineld] loaded ${loaded} scheduled job(s) from co
 // Durable mediated scheduling: the host fires due jobs as 'cron' turns and delivers
 // the result to the job's deliverTo (a Slack channel/user), if set.
 startScheduler(async (job) => {
-  const r = await runTurn({ conversationId: job.conversationId, surface: 'cron', userId: 'scheduler', text: job.prompt });
+  const r = await runTurn({ conversationId: job.conversationId, surface: 'cron', userId: 'scheduler', text: job.prompt, model: job.model });
   const out = r.decision.action === 'reply' ? r.decision.content ?? '' : '';
   if (job.deliverTo && out && slack) {
     await slack.deliver(job.deliverTo, out).catch((e: any) => console.error('[sentineld] deliver failed:', e?.message ?? e));

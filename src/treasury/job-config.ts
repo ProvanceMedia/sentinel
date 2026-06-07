@@ -15,6 +15,7 @@ export interface JobSpec {
   everySeconds?: number;
   deliverTo?: string; // Slack channel id (C…/G…) or user id (U…)
   description?: string;
+  model?: string; // per-job model, e.g. claude-haiku-4-5; falls back to SENTINEL_MODEL
   enabled?: boolean;
 }
 
@@ -44,6 +45,7 @@ export function loadJobsFromConfig(): number {
       intervalMs: s.everySeconds ? s.everySeconds * 1000 : undefined,
       deliverTo: s.deliverTo,
       description: s.description,
+      model: s.model,
       enabled: s.enabled ?? true,
       source: 'config',
     });

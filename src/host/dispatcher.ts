@@ -87,6 +87,7 @@ function buildCapabilities(): string {
   '',
   'When asked what is set up or scheduled, actually CALL `sentinel_cron_list` and check your memory — never guess "nothing".',
   'To RUN a scheduled job on demand ("run/trigger X now"), call the `sentinel_cron_run` tool with its id — it hands you the job\'s instructions; carry them out now and reply with the result here. NEVER say you "can\'t trigger it" or invent a trigger/RemoteTrigger API — `sentinel_cron_run` IS the trigger.',
+  'When you CREATE a scheduled job, choose its `model` by load: high-frequency or simple jobs (alerts, every-few-minutes sweeps) → `claude-haiku-4-5` (cheaper/faster); infrequent + reasoning-heavy (daily code review, analysis, drafting) → `claude-opus-4-8`; omit for the default. Tell the user which you picked so they can change it.',
   '',
   "Your configuration lives in operator-edited files. When asked how to add something, give the Sentinel answer below — do NOT suggest generic Claude Code config (settings.local.json, a project .env, ~/.bashrc, or \"skills\"):",
   '- **API keys / secrets** → the vault: `personal/config/secrets.json` (a flat {"KEY":"value"} map) or a `SENTINEL_VAULT_<KEY>=…` line in `.env`. Secrets stay host-side and never enter your container. You cannot set one from chat — tell the user the exact key name to add.',
@@ -103,6 +104,7 @@ export interface InboundTurn {
   surface: string;
   userId: string;
   text: string;
+  model?: string; // per-turn model override (e.g. a cron job's own model); falls back to SENTINEL_MODEL
 }
 
 export interface TurnResult {
@@ -148,6 +150,7 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
 
   // Reloaded each turn so persona edits and newly-saved memory apply without a restart.
   const persona = loadPersona();
+  const model = inbound.model || MODEL; // per-turn override (cron jobs carry their own), else the base model
   const runId = crypto.randomUUID().slice(0, 8);
   const sessionId = sessionKey(inbound.conversationId);
   const sessionDir = path.join(RUNTIME_DIR, 'sessions', sessionId);
@@ -226,7 +229,7 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
         channel.send({
           t: 'turn_spec',
           prompt: inbound.text,
-          model: MODEL,
+          model,
           fallbackModel: FALLBACK_MODEL || undefined,
           appendSystemPrompt: `${persona.systemPromptAppend}\n\n${CORE_OPERATING}\n\n${buildCapabilities()}`,
           allowedTools: ALLOWED_TOOLS,
@@ -295,14 +298,14 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
 
   try {
     const r = await result;
-    meterRecord({ turnId: runId, ts: new Date().toISOString(), surface: inbound.surface, model: MODEL, authKind: r.account?.tokenSource, costUSD: r.costUSD, usage: r.usage, rateLimit: r.rateLimit });
+    meterRecord({ turnId: runId, ts: new Date().toISOString(), surface: inbound.surface, model, authKind: r.account?.tokenSource, costUSD: r.costUSD, usage: r.usage, rateLimit: r.rateLimit });
     audit(AUDIT_DIR, {
       ts: new Date().toISOString(),
       turnId: runId,
       conversationId: inbound.conversationId,
       surface: inbound.surface,
       userId: inbound.userId,
-      model: MODEL,
+      model,
       subtype: r.subtype,
       authOk: r.authOk,
       stopped: r.stopped,
