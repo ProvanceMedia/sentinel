@@ -8,9 +8,13 @@ const STOP_WORDS = new Set(['stop', 'halt', 'abort', 'cancel', 'kill']);
 const STATUS_THROTTLE_MS = 900;
 
 // Map internal status strings to a clean phrase for the DM shimmer ("Sentinel <phrase>").
+// Tool statuses arrive pre-labelled by the dispatcher ("🔧 reading foo.ts", "🛰️ calling api.x").
 function shimmerText(s: string): string {
-  if (/composing|writing|typing/i.test(s)) return 'is typing…';
-  if (/🔧|🛰️|search|file_|tool|looking/i.test(s)) return 'is working on it…';
+  if (/✍|composing/i.test(s)) return 'is typing…';
+  if (/^(🔧|🛰)/u.test(s)) {
+    const label = s.replace(/^\S+\s+/, '').replace(/[…\s]+$/, '').trim(); // drop emoji token + any trailing ellipsis
+    if (label) return `is ${label}…`;
+  }
   return 'is thinking…';
 }
 
@@ -104,7 +108,7 @@ export async function startSlack(): Promise<SlackSurface> {
       if (now - lastUpd < STATUS_THROTTLE_MS) return;
       lastUpd = now;
       if (shimmer) void setStatus(channel, threadTs, shimmerText(s));
-      else if (phTs) web.chat.update({ channel, ts: phTs, text: `🧠 ${s}` }).catch(() => {});
+      else if (phTs) web.chat.update({ channel, ts: phTs, text: s }).catch(() => {});
     };
     const clearShimmer = () => setStatus(channel, threadTs, '').catch(() => {});
 

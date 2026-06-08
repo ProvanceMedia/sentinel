@@ -141,6 +141,64 @@ export function inflightCount(): number {
   return inflight.size;
 }
 
+// Friendly "what is the agent doing right now" label from a tool call + its input,
+// so surfaces can show "reading connect-tool.ts" / "searching the web…" rather than a bare name.
+function clip(s: unknown, n = 46): string {
+  const t = String(s ?? '').replace(/\s+/g, ' ').trim();
+  return t.length > n ? `${t.slice(0, n - 1)}…` : t;
+}
+function baseName(p: unknown): string {
+  const s = String(p ?? '');
+  return s.split('/').pop() || s;
+}
+function hostOf(u: unknown): string {
+  try {
+    return new URL(String(u)).host;
+  } catch {
+    return clip(u, 40);
+  }
+}
+export function toolLabel(name: string, input?: unknown): string {
+  const i = (input ?? {}) as Record<string, any>;
+  const mcp = /^mcp__([a-z0-9_]+?)__(.+)$/i.exec(name);
+  const server = mcp ? mcp[1].toLowerCase() : '';
+  const n = mcp ? mcp[2] : name;
+  if (/gmail/.test(server)) return 'checking email';
+  if (/calendar/.test(server)) return 'checking the calendar';
+  if (/drive/.test(server)) return 'looking in Drive';
+  switch (n) {
+    case 'Read':
+      return `reading ${baseName(i.file_path)}`;
+    case 'Write':
+      return `writing ${baseName(i.file_path)}`;
+    case 'Edit':
+    case 'NotebookEdit':
+      return `editing ${baseName(i.file_path ?? i.notebook_path)}`;
+    case 'Bash':
+      return `running ${clip(i.command ?? 'a command', 52)}`;
+    case 'Glob':
+      return `finding ${clip(i.pattern, 28)}`;
+    case 'Grep':
+      return `searching for ${clip(i.pattern, 28)}`;
+    case 'WebSearch':
+      return `searching the web for ${clip(i.query, 38)}`;
+    case 'WebFetch':
+      return `reading ${hostOf(i.url)}`;
+    case 'Task':
+    case 'Agent':
+      return 'running a sub-agent';
+    case 'TodoWrite':
+      return 'planning';
+    case 'http_call':
+      return `calling ${clip(i.host ?? 'an API', 38)}`;
+    case 'sentinel_connect':
+      return `wiring up ${clip(i.host ?? 'a connection', 28)}`;
+  }
+  if (/memory/.test(n)) return /save|write|remember/.test(n) ? 'saving to memory' : 'checking its memory';
+  if (/cron/.test(n)) return /create/.test(n) ? 'scheduling a job' : /run/.test(n) ? 'running a job' : 'checking its schedule';
+  return `using ${n.replace(/_/g, ' ')}`;
+}
+
 export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): Promise<TurnResult> {
   // Pre-turn budget/rate-limit gate.
   const g = meterGuard();
@@ -247,12 +305,12 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
         if (f.event.kind === 'init') hooks.onStatus?.(`🧠 ${f.event.model} (apiKeySource=${f.event.apiKeySource})`);
         else if (f.event.kind === 'tool_use') {
           toolUses++;
-          hooks.onStatus?.(`🔧 ${f.event.name} (#${toolUses})`);
+          hooks.onStatus?.(`🔧 ${toolLabel(f.event.name, f.event.input)}`);
           if (toolUses > MAX_ITER) stop('iteration-cap');
         } else if (f.event.kind === 'assistant_text') hooks.onStatus?.('✍️  composing');
         else if (f.event.kind === 'log') hooks.onStatus?.(`🚫 ${f.event.msg}`);
       } else if (f.t === 'mediated_call') {
-        hooks.onStatus?.(`🛰️  ${f.tool}`);
+        hooks.onStatus?.(`🛰️  ${toolLabel(f.tool, f.args)}`);
         audit(AUDIT_DIR, { ts: new Date().toISOString(), turnId: runId, conversationId: inbound.conversationId, event: 'mediated_call', tool: f.tool });
         handleMediatedCall(f.tool, f.args)
           .then((res) => {

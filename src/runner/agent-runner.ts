@@ -155,7 +155,7 @@ async function runTurn(spec: Extract<HostFrame, { t: 'turn_spec' }>) {
           rawText += b.text;
           send({ t: 'event', event: { kind: 'assistant_text', text: b.text } });
         } else if (b.type === 'tool_use') {
-          send({ t: 'event', event: { kind: 'tool_use', name: b.name, id: b.id } });
+          send({ t: 'event', event: { kind: 'tool_use', name: b.name, id: b.id, input: b.input } });
         }
       }
     } else if (m.type === 'result') {

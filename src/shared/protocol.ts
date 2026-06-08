@@ -53,7 +53,7 @@ export type AccountInfo = {
 export type AgentEvent =
   | { kind: 'init'; model: string; apiKeySource: string; sessionId: string | null }
   | { kind: 'assistant_text'; text: string }
-  | { kind: 'tool_use'; name: string; id: string }
+  | { kind: 'tool_use'; name: string; id: string; input?: unknown }
   | { kind: 'status'; text: string }
   | { kind: 'log'; level: 'info' | 'warn' | 'error'; msg: string };
 
