@@ -20,6 +20,9 @@ const CANDIDATES: Candidate[] = [
   { scheme: 'bearer' },
   { scheme: 'header', headerName: 'X-API-Key' },
   { scheme: 'query', queryParam: 'api_key' },
+  { scheme: 'query', queryParam: 'key' }, // weatherapi.com, many others
+  { scheme: 'query', queryParam: 'apikey' },
+  { scheme: 'query', queryParam: 'token' },
   { scheme: 'header', headerName: 'Authorization' }, // raw key, no "Bearer"
   { scheme: 'basic' },
 ];
@@ -55,11 +58,14 @@ export function registerConnectTool(): void {
     {
       name: 'sentinel_connect',
       description:
-        'Wire up a new API so you can call it with http_call. The operator must FIRST add the key to the vault (named) and give you the host + a test path — NEVER invent the host. This tool probes the host with the vault key to auto-detect the auth scheme, then saves the connection. You never see the key. Params: host (e.g. api.acme.com), vaultKey (the name the operator gave the key), testPath (a GET endpoint that needs auth, e.g. v2/me — used to verify), note (optional).',
+        'Wire up OR fix an API connection so you can call it with http_call. The operator first adds the key to the vault (named) and gives you the host — NEVER invent the host. By default this probes the host with the vault key to AUTO-DETECT the auth scheme and saves it. If auto-detect was wrong, or you already know the API\'s auth from its docs, pass an explicit `scheme` (bearer | header | query | basic) with `headerName` or `queryParam` to SET it — re-calling for the same host overwrites the old entry, so this is also how you REPAIR a broken connection. You only ever set config; you never see the key. Params: host, vaultKey, testPath (an auth-requiring GET path used to verify, e.g. v1/current.json?q=London), scheme/headerName/queryParam (optional, to set auth explicitly), note (optional).',
       params: {
         host: { type: 'string', description: 'the API host the operator gave you — do not guess it' },
         vaultKey: { type: 'string', description: 'name of the key already in the vault' },
         testPath: { type: 'string', description: 'an auth-requiring GET path to probe/verify, e.g. v1/me', optional: true },
+        scheme: { type: 'string', description: 'explicit auth scheme to SET: bearer | header | query | basic (omit to auto-detect)', optional: true },
+        headerName: { type: 'string', description: 'header name when scheme=header (e.g. X-API-Key)', optional: true },
+        queryParam: { type: 'string', description: 'query-param name when scheme=query (e.g. key, api_key)', optional: true },
         note: { type: 'string', description: 'short label for what this API is', optional: true },
       },
     },
@@ -85,11 +91,28 @@ export function registerConnectTool(): void {
       const blocked = await ssrfCheck(host);
       if (blocked) return { ok: false, error: `refused: ${blocked}` };
 
-      // Detect the scheme by probing — only "verify" if the endpoint actually requires auth.
+      const explicit = String(args.scheme ?? '').trim().toLowerCase();
       let chosen: Candidate = { scheme: 'bearer' };
       let verified = false;
       let status = 0;
-      if (testPath) {
+
+      if (explicit) {
+        // The agent is SETTING the auth method (knows it, or repairing a wrong guess).
+        if (!['bearer', 'header', 'query', 'basic'].includes(explicit)) {
+          return { ok: false, error: `unknown scheme "${explicit}" — use bearer | header | query | basic` };
+        }
+        chosen = { scheme: explicit };
+        if (explicit === 'header') chosen.headerName = String(args.headerName ?? 'X-API-Key').trim();
+        if (explicit === 'query') chosen.queryParam = String(args.queryParam ?? 'api_key').trim();
+        if (testPath) {
+          const base = await probe(host, testPath, null);
+          const baseOpen = base >= 200 && base < 300;
+          const s = await probe(host, testPath, key, chosen);
+          verified = s >= 200 && s < 300 && !baseOpen;
+          status = verified ? s : s || base;
+        }
+      } else if (testPath) {
+        // Auto-detect by probing — only "verify" if the endpoint actually requires auth.
         const base = await probe(host, testPath, null);
         const baseOpen = base >= 200 && base < 300;
         for (const c of CANDIDATES) {
@@ -124,7 +147,7 @@ export function registerConnectTool(): void {
         ok: true,
         data: verified
           ? `Connected ${host} — detected ${how} (verified: HTTP ${status} on ${testPath}). You can call it with http_call now.`
-          : `Saved ${host} as ${how}, but could NOT verify it${testPath ? ` (HTTP ${status} on ${testPath})` : ' (no test path was given)'}. Try an http_call to a real endpoint; if it returns 401/403, ask the operator for the right auth scheme or a better test path.`,
+          : `Saved ${host} as ${how}, but could NOT verify it${testPath ? ` (HTTP ${status} on ${testPath})` : ' (no test path was given)'}. If an http_call 401/403s, FIX it yourself: re-call sentinel_connect for this host with an explicit scheme (e.g. scheme:"query", queryParam:"key" for weatherapi.com) — check the API docs for how the key is passed. You only set config, never see the key.`,
       };
     },
   );
