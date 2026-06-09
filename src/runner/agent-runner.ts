@@ -101,8 +101,10 @@ async function runTurn(spec: Extract<HostFrame, { t: 'turn_spec' }>) {
   if (spec.appendSystemPrompt) {
     opts.systemPrompt = { type: 'preset', preset: 'claude_code', append: spec.appendSystemPrompt };
   }
-  // Built-in throttle fallback (e.g. opus -> haiku on overload).
-  if (spec.fallbackModel) opts.fallbackModel = spec.fallbackModel;
+  // Built-in throttle fallback (e.g. opus -> haiku on overload). Skip it when it equals the
+  // run's model — the SDK rejects fallback == main, which would otherwise fail every turn
+  // whose model matches the fallback (e.g. a haiku-pinned job under a haiku fallback).
+  if (spec.fallbackModel && spec.fallbackModel !== opts.model) opts.fallbackModel = spec.fallbackModel;
 
   // Deterministic tool denial: disallowedTools actually removes the tool (canUseTool
   // is SKIPPED for pre-approved tools like Bash, so it can't be relied on to block them).
