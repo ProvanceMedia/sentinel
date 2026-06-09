@@ -7,6 +7,7 @@ import { startDashboard } from './host/dashboard';
 import { reloadVault } from './broker/vault';
 import { loadAuthHosts } from './broker/auth-hosts';
 import { runTurn } from './host/dispatcher';
+import { startHostJobs } from './host/host-jobs';
 
 const surfaces = (process.env.SENTINEL_SURFACES ?? 'slack')
   .split(',')
@@ -39,6 +40,9 @@ startScheduler(async (job) => {
   return out;
 });
 console.error('[sentineld] scheduler started');
+
+// Deterministic host-side jobs (no agent) from personal/host-jobs/*.mjs — pollers, webhook relays.
+await startHostJobs();
 
 console.error('[sentineld] up. Ctrl-C to stop.');
 
