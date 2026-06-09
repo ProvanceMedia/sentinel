@@ -132,16 +132,20 @@ Full design: [ARCHITECTURE.md](./ARCHITECTURE.md).
 |---|---|---|
 | `CLAUDE_CODE_OAUTH_TOKEN` | — | your Claude subscription token (the installer sets this) |
 | `SENTINEL_RUNNER_MODE` | `local` | `docker` (real sandbox) or `local` (fast dev loop) |
-| `SENTINEL_MODEL` | `claude-haiku-4-5` | model for turns (e.g. `claude-opus-4-8`) |
+| `SENTINEL_MODEL` | `claude-sonnet-4-6` | default model for chat turns (`claude-haiku-4-5` / `claude-sonnet-4-6` / `claude-opus-4-8`) |
+| `SENTINEL_EFFORT` | — | default reasoning effort `low`–`max` (blank = the model's own default; skipped on Haiku) |
 | `SENTINEL_EGRESS` | `bridge` | `jail` (kernel egress jail), `none`, or `bridge` |
+| `SENTINEL_PROXY_PASSTHROUGH` | `off` | `on` lets the agent reach **any** host (open web); keys are still injected only for auth-hosts, and loopback/metadata/private IPs stay blocked |
 | `SENTINEL_SURFACES` | `slack` | which chat surfaces the daemon starts |
-| `SENTINEL_TZ` | `UTC` | timezone for cron schedules |
+| `SENTINEL_TZ` | `UTC` | timezone for cron schedules (the installer detects and prompts for it) |
 | `SENTINEL_AUTHPROXY` | `off` | `on` to let `gh`/`git`/`curl` run in the box (keys injected) |
 | `SENTINEL_DASHBOARD` | `off` | `on` to serve the local connections web form |
 
-- **Persona** → edit `personal/persona/*.md` (seeded from `config/generic/persona.example`).
+- **Persona** → edit `personal/persona/*.md` (seeded from `config/generic/persona.example`): `identity` (who it is), `soul` (voice), `user` (who it serves), `operating` (how to act safely on the open web).
 - **Connections** → `personal/config/auth-hosts.json`; secrets go in the vault (`personal/config/secrets.json` or `SENTINEL_VAULT_*`), never the repo.
-- **Scheduled jobs** → `personal/config/jobs.json`.
+- **Scheduled jobs** → declare them in `personal/config/jobs.json`, or just ask in chat: the agent creates, lists, runs, edits, and cancels jobs (each with its own model and timezone) via its `sentinel_cron_*` tools.
+
+**Choosing the model/effort from chat** — switch inline and it sticks to the thread: `use opus` / `use sonnet` / `use haiku` picks the model; `ultrathink` or `xhigh` raises reasoning effort; `normal effort` and `default model` reset.
 
 ## Connecting Slack
 
