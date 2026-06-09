@@ -10,6 +10,7 @@
 // uncontained); logs host+status only, never headers/secrets.
 import http from 'node:http';
 import https from 'node:https';
+import net from 'node:net';
 import tls from 'node:tls';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -187,12 +188,12 @@ export function startAuthProxy(): AuthProxyHandle | null {
     res.end('this is a CONNECT proxy');
   });
 
-  server.on('connect', (req, clientSocket) => {
+  server.on('connect', (req, clientSocket, head) => {
     // FIRST, always: a denied or reset client socket must never crash the proxy.
     clientSocket.on('error', () => clientSocket.destroy());
-    const host = String(req.url ?? '')
-      .split(':')[0]
-      .toLowerCase();
+    const [hostRaw, portRaw] = String(req.url ?? '').split(':');
+    const host = (hostRaw ?? '').toLowerCase();
+    const port = Number(portRaw) || 443;
     const deny = (why: string) => {
       console.error(`[auth-proxy] DENY ${host} (${why})`);
       try {
@@ -201,25 +202,54 @@ export function startAuthProxy(): AuthProxyHandle | null {
         /* socket already gone */
       }
     };
-    if (!lookupHost(host)) return deny('not in auth-hosts');
-    if (host === 'api.anthropic.com') return deny('anthropic');
+    // SSRF guard runs for EVERY destination (allowlisted or not): the host is uncontained,
+    // so the agent must never reach loopback / link-local / cloud-metadata / private targets.
     void ssrfCheck(host).then((blocked) => {
       if (blocked) return deny(blocked);
-      try {
-        clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
-        const tlsSocket = new tls.TLSSocket(clientSocket, { isServer: true, secureContext: contextForHost(host) });
-        tlsSocket.on('error', () => clientSocket.destroy());
-        mitm.emit('connection', tlsSocket);
-      } catch (e) {
-        console.error('[auth-proxy] connect setup error:', (e as Error).message);
-        clientSocket.destroy();
+      const known = lookupHost(host);
+      if (known && host !== 'api.anthropic.com') {
+        // Allowlisted host: MITM-terminate and inject the real credential host-side.
+        try {
+          clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+          const tlsSocket = new tls.TLSSocket(clientSocket, { isServer: true, secureContext: contextForHost(host) });
+          tlsSocket.on('error', () => clientSocket.destroy());
+          mitm.emit('connection', tlsSocket);
+        } catch (e) {
+          console.error('[auth-proxy] connect setup error:', (e as Error).message);
+          clientSocket.destroy();
+        }
+        return;
       }
+      // Not allowlisted (or Anthropic): fail-closed by default. With SENTINEL_PROXY_PASSTHROUGH=on,
+      // blind-tunnel it instead — end-to-end TLS the proxy never decrypts, so NO credential is ever
+      // injected and the container still holds no key; only the egress restriction is lifted.
+      if (process.env.SENTINEL_PROXY_PASSTHROUGH !== 'on') {
+        return deny(host === 'api.anthropic.com' ? 'anthropic' : 'not in auth-hosts');
+      }
+      console.error(`[auth-proxy] TUNNEL ${host} (passthrough, no credential)`);
+      const upstream = net.connect(port, host, () => {
+        try {
+          clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
+          if (head && head.length) upstream.write(head);
+          upstream.pipe(clientSocket);
+          clientSocket.pipe(upstream);
+        } catch {
+          upstream.destroy();
+          clientSocket.destroy();
+        }
+      });
+      upstream.on('error', () => clientSocket.destroy());
+      clientSocket.on('error', () => upstream.destroy());
     });
   });
 
   server.listen(port, bind, () => {
     ensureIngress(port);
-    console.error(`[auth-proxy] listening on ${bind}:${port} — ${authHostsCount()} host(s) injectable`);
+    const passthrough = process.env.SENTINEL_PROXY_PASSTHROUGH === 'on';
+    console.error(
+      `[auth-proxy] listening on ${bind}:${port} — ${authHostsCount()} host(s) injectable` +
+        (passthrough ? '; passthrough ON (open egress — non-allowlisted hosts tunnel through with no credential)' : '; fail-closed (non-allowlisted hosts denied)'),
+    );
   });
   server.on('error', (e) => console.error('[auth-proxy] server error:', (e as Error).message));
   return {
