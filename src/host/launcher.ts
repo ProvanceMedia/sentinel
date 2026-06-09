@@ -50,6 +50,7 @@ export function launchLocal(spec: LaunchSpec): RunnerHandle {
       SENTINEL_RUN_ID: spec.runId,
       HOME: spec.sessionDir,
       CLAUDE_CONFIG_DIR: path.join(spec.sessionDir, '.claude'),
+      CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: '1',
     },
     stdio: ['ignore', 'inherit', 'inherit'],
   });
@@ -101,6 +102,11 @@ export function launchDocker(spec: LaunchSpec): RunnerHandle {
     `HOME=/session`,
     '-e',
     `CLAUDE_CONFIG_DIR=/session/.claude`,
+    // The in-container Claude CLI's non-essential phone-home (telemetry, error reporting,
+    // auto-update) can't pass the auth-proxy anyway; turn it off so it stops generating
+    // proxy DENY noise for hosts like datadog.
+    '-e',
+    `CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC=1`,
   ];
   for (const [k, v] of Object.entries(spec.env)) args.push('-e', `${k}=${v}`);
   args.push(image);
