@@ -27,6 +27,34 @@ function allowlist(): Set<string> {
   );
 }
 
+// Pull a message's file attachments down with the bot token so the agent can read them.
+// Capped per file; needs the `files:read` scope on the Slack app.
+const MAX_ATTACH_BYTES = 25 * 1024 * 1024;
+async function downloadFiles(files: any[], token: string): Promise<{ name: string; data: Buffer }[]> {
+  const out: { name: string; data: Buffer }[] = [];
+  for (const f of (files ?? []).slice(0, 10)) {
+    const url = f?.url_private_download || f?.url_private;
+    if (!url) continue;
+    if (typeof f.size === 'number' && f.size > MAX_ATTACH_BYTES) {
+      console.error(`[slack] skipping oversized attachment ${f.name} (${f.size} bytes)`);
+      continue;
+    }
+    try {
+      const r = await fetch(url, { headers: { Authorization: `Bearer ${token}` } });
+      if (!r.ok) {
+        console.error(`[slack] attachment "${f.name}" download failed: HTTP ${r.status} (need files:read scope?)`);
+        continue;
+      }
+      const buf = Buffer.from(await r.arrayBuffer());
+      if (buf.length > MAX_ATTACH_BYTES) continue;
+      out.push({ name: String(f.name || f.id || 'attachment'), data: buf });
+    } catch (e: any) {
+      console.error(`[slack] attachment "${f?.name}" download error:`, e?.message ?? e);
+    }
+  }
+  return out;
+}
+
 export interface SlackSurface {
   deliver: (target: string, text: string) => Promise<void>;
 }
@@ -65,11 +93,12 @@ export async function startSlack(): Promise<SlackSurface> {
   sm.on('assistant_thread_started', onEvent);
 
   async function handle(event: any): Promise<void> {
-    if (!event || event.bot_id || event.subtype || event.user === botUserId) return; // ignore bots / edits / self
+    if (!event || event.bot_id || event.user === botUserId) return; // ignore bots / self
+    if (event.subtype && event.subtype !== 'file_share') return; // ignore edits/deletes/joins, but keep attachments
     const text = String(event.text ?? '')
       .replace(new RegExp(`<@${botUserId}>`, 'g'), '')
       .trim();
-    if (!text) return;
+    if (!text && !event.files?.length) return; // nothing to act on
     if (allow.size && !allow.has(event.user)) return; // not authorized
 
     const channel = event.channel;
@@ -112,7 +141,8 @@ export async function startSlack(): Promise<SlackSurface> {
     };
     const clearShimmer = () => setStatus(channel, threadTs, '').catch(() => {});
 
-    const inbound: InboundTurn = { conversationId, surface: 'slack', userId: event.user, text };
+    const attachments = event.files?.length ? await downloadFiles(event.files, botToken!) : [];
+    const inbound: InboundTurn = { conversationId, surface: 'slack', userId: event.user, text, attachments };
     try {
       const res = await runTurn(inbound, { onStatus });
       if (res.decision.action === 'reply') {

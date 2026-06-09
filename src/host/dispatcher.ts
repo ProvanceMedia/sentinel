@@ -158,6 +158,7 @@ export interface InboundTurn {
   text: string;
   model?: string; // per-turn model override (e.g. a cron job's own model); falls back to SENTINEL_MODEL
   effort?: string; // per-turn reasoning effort override (e.g. a cron job's); falls back to SENTINEL_EFFORT
+  attachments?: { name: string; data: Buffer }[]; // files the user attached; written into the work dir for the agent to read
 }
 
 export interface TurnResult {
@@ -300,6 +301,27 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
     }
   }
 
+  // Chat attachments → write into the work dir (the agent's cwd) and tell it they're there.
+  let promptText = inbound.text;
+  if (inbound.attachments?.length) {
+    const workDir = path.join(sessionDir, 'work');
+    const saved: string[] = [];
+    for (const a of inbound.attachments) {
+      const safe = path.basename(a.name).replace(/[^\w.\-]+/g, '_') || 'attachment';
+      try {
+        fs.writeFileSync(path.join(workDir, safe), a.data);
+        if (MODE === 'docker') fs.chmodSync(path.join(workDir, safe), 0o644);
+        saved.push(safe);
+      } catch {
+        /* skip a file we can't write */
+      }
+    }
+    if (saved.length) {
+      const note = `[The user attached ${saved.length} file(s) to this message, saved in your current working directory: ${saved.join(', ')}. Read them with the Read tool (it handles images, PDFs, and text) before replying.]`;
+      promptText = inbound.text ? `${inbound.text}\n\n${note}` : note;
+    }
+  }
+
   const auth = resolveAuth(`${inbound.surface}.chat`);
   const channel = new ControlChannel(socketPathHost);
   await channel.listen();
@@ -358,7 +380,7 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
         const toolPolicy: ToolPolicy | undefined = DENY_TOOLS.length ? { deny: DENY_TOOLS } : undefined;
         channel.send({
           t: 'turn_spec',
-          prompt: inbound.text,
+          prompt: promptText,
           model,
           fallbackModel: FALLBACK_MODEL || undefined,
           effort: effort || undefined,

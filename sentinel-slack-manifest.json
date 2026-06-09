@@ -27,7 +27,8 @@
         "im:write",
         "chat:write",
         "reactions:write",
-        "users:read"
+        "users:read",
+        "files:read"
       ]
     }
   },
