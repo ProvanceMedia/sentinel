@@ -16,6 +16,7 @@ export interface JobSpec {
   deliverTo?: string; // Slack channel id (C…/G…) or user id (U…)
   description?: string;
   model?: string; // per-job model, e.g. claude-haiku-4-5; falls back to SENTINEL_MODEL
+  tz?: string; // per-job IANA timezone, e.g. America/New_York; falls back to SENTINEL_TZ
   enabled?: boolean;
 }
 
@@ -46,6 +47,7 @@ export function loadJobsFromConfig(): number {
       deliverTo: s.deliverTo,
       description: s.description,
       model: s.model,
+      tz: s.tz,
       enabled: s.enabled ?? true,
       source: 'config',
     });

@@ -16,7 +16,7 @@ export function startScheduler(runJob: RunJob, tickMs = 2000): () => void {
       for (const job of due) {
         // advance/disable first (idempotency)
         const now = Date.now();
-        if (job.cron) store.update(job.id, { runAt: store.nextCron(job.cron, now), lastRun: now });
+        if (job.cron) store.update(job.id, { runAt: store.nextCron(job.cron, now, job.tz), lastRun: now });
         else if (job.intervalMs) store.update(job.id, { runAt: now + job.intervalMs, lastRun: now });
         else store.update(job.id, { enabled: false, lastRun: now });
         try {

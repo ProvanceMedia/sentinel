@@ -11,7 +11,8 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..')
 const RUNTIME_DIR = process.env.SENTINEL_RUNTIME_DIR ?? path.join(ROOT, '.runtime');
 const JOBS_DIR = path.join(RUNTIME_DIR, 'jobs');
 const JOBS_FILE = path.join(JOBS_DIR, 'jobs.json');
-const TZ = process.env.SENTINEL_TZ || process.env.TZ || 'UTC';
+// Default timezone for cron schedules. Per-job `tz` overrides this; both fall back here.
+export const DEFAULT_TZ = process.env.SENTINEL_TZ || process.env.TZ || 'UTC';
 
 export interface Job {
   id: string;
@@ -27,12 +28,29 @@ export interface Job {
   lastResult?: string;
   description?: string;
   model?: string; // per-job model override (e.g. claude-haiku-4-5); falls back to SENTINEL_MODEL
+  tz?: string; // per-job IANA timezone for the cron (e.g. America/New_York); falls back to DEFAULT_TZ
   source?: 'config' | 'agent'; // 'config' = declared in jobs.json, 'agent' = created in chat
 }
 
-/** Next run time (epoch ms) for a cron expression, after `after`. */
-export function nextCron(expr: string, after = Date.now()): number {
-  return CronExpressionParser.parse(expr, { tz: TZ, currentDate: new Date(after) }).next().getTime();
+/** Next run time (epoch ms) for a cron expression, after `after`, resolved in IANA `tz`. */
+export function nextCron(expr: string, after = Date.now(), tz: string = DEFAULT_TZ): number {
+  return CronExpressionParser.parse(expr, { tz: tz || DEFAULT_TZ, currentDate: new Date(after) }).next().getTime();
+}
+
+/** Render a timestamp in `tz` for human/agent-facing schedules, e.g. "9 Jun 2026, 17:00 Europe/London". */
+export function formatInTz(ms: number, tz: string = DEFAULT_TZ): string {
+  const zone = tz || DEFAULT_TZ;
+  return `${new Date(ms).toLocaleString('en-GB', { timeZone: zone, dateStyle: 'medium', timeStyle: 'short' })} ${zone}`;
+}
+
+/** True if `tz` is a valid IANA timezone name. */
+export function isValidTz(tz: string): boolean {
+  try {
+    new Intl.DateTimeFormat('en-GB', { timeZone: tz });
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 function load(): Job[] {
@@ -55,6 +73,7 @@ export interface JobInput {
   deliverTo?: string;
   description?: string;
   model?: string;
+  tz?: string;
   source?: 'config' | 'agent';
 }
 
@@ -68,7 +87,7 @@ export function create(input: JobInput): string {
 export function upsert(input: JobInput & { id: string; enabled?: boolean }): void {
   const jobs = load();
   const i = jobs.findIndex((j) => j.id === input.id);
-  const runAt = input.cron ? nextCron(input.cron) : (input.runAt ?? Date.now());
+  const runAt = input.cron ? nextCron(input.cron, Date.now(), input.tz) : (input.runAt ?? Date.now());
   const base: Job = {
     id: input.id,
     prompt: input.prompt,
@@ -81,6 +100,7 @@ export function upsert(input: JobInput & { id: string; enabled?: boolean }): voi
     createdAt: i >= 0 ? jobs[i].createdAt : Date.now(),
     description: input.description,
     model: input.model,
+    tz: input.tz,
     source: input.source ?? (i >= 0 ? jobs[i].source : 'agent'),
   };
   if (i >= 0) jobs[i] = { ...jobs[i], ...base };
