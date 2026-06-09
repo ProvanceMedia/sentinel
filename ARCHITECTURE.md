@@ -101,12 +101,19 @@ in-agent gate is explicitly NOT the boundary.
   refresh token) is NEVER mounted. The host (`token-minter`) injects only a
   freshly-minted short-TTL access token per turn, and refuses a turn whose token is
   near expiry. This is the only secret in the box.
-- **Network**: a per-session egress jail (default-deny); only `api.anthropic.com` is
-  reachable. The allowlist bounds DESTINATION not DATA, so it's kept to the minimum a
-  task needs, with per-destination volume audit to catch bulk exfiltration.
-- **Credential injection**: every credentialed service is `exposure:'tool'` — the
-  secret is injected host-side inside the mediated handler, never in the container.
-  (Transparent HTTPS injection via an in-box proxy is intentionally avoided.)
+- **Network**: egress is fail-closed by default — the host auth-proxy
+  (`SENTINEL_AUTHPROXY=on`) only lets the box reach hosts in `auth-hosts.json` and
+  denies the rest, with an optional kernel egress jail (`SENTINEL_EGRESS=jail`) forcing
+  all container traffic through it. `SENTINEL_PROXY_PASSTHROUGH=on` opens egress to ANY
+  host — blind-tunnelled, no credential injected — trading exfiltration-resistance for
+  open web access; loopback/link-local/cloud-metadata/private IPs stay blocked (SSRF
+  guard) in either mode. The allowlist bounds DESTINATION not DATA, with per-destination
+  volume audit to catch bulk exfiltration.
+- **Credential injection**: secrets are injected host-side, never in the container —
+  two paths. Mediated tools (`http_call`, service tools) inject the secret inside the
+  handler. For unmodified binaries (`gh`/`git`/`curl`), the host auth-proxy MITM-
+  terminates TLS for allowlisted hosts with a per-deployment CA the runner trusts and
+  swaps the placeholder for the real key. The container only ever holds placeholders.
 - **Mounts**: NO shared sessions parent — the box mounts ONLY this conversation's
   directory (rw) + tmpfs for `~/.claude` and `/tmp` + read-only attachments.
   `mount-security` realpaths every source before matching; a root-owned deny-list
