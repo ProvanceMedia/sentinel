@@ -336,6 +336,7 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
   let authOk = true;
   let handle: RunnerHandle | null = null;
   let stopped = false;
+  let stopReason = '';
   let toolUses = 0;
   let idleTimer: NodeJS.Timeout | null = null;
   let hardTimer: NodeJS.Timeout | null = null;
@@ -352,6 +353,7 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
     const stop = (reason: string) => {
       if (stopped) return;
       stopped = true;
+      stopReason = reason;
       hooks.onStatus?.(`🛑 stopping (${reason})`);
       try {
         channel.send({ t: 'abort' }); // soft interrupt first
@@ -443,8 +445,17 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
 
     channel.on('closed', () => {
       // If we stopped it, a closed socket is success (the container was killed).
-      if (stopped) done(() => resolve({ decision: { action: 'silent' }, sessionId: null, account, subtype: 'stopped', authOk, stopped: true }));
-      else done(() => reject(new Error('runner closed before delivering a result')));
+      // A limit-driven stop used to vanish silently; tell the user why instead. A deliberate
+      // user-stop stays silent (the 🛑 reaction already acknowledged it).
+      if (stopped) {
+        const notices: Record<string, string> = {
+          'iteration-cap': "I stopped this turn after hitting the tool-step limit. That was a big task with a lot of steps, and I got partway through. Tell me to continue and I'll keep going.",
+          'idle-timeout': "I stopped because I went quiet for too long mid-task. Tell me to continue and I'll resume.",
+          'hard-timeout': "I hit this turn's time limit and stopped partway. Tell me to continue and I'll carry on.",
+        };
+        const msg = stopReason === 'user-stop' ? '' : (notices[stopReason] ?? "I stopped partway through. Tell me to continue and I'll resume.");
+        done(() => resolve({ decision: msg ? { action: 'reply', content: msg } : { action: 'silent' }, sessionId: null, account, subtype: 'stopped', authOk, stopped: true }));
+      } else done(() => reject(new Error('runner closed before delivering a result')));
     });
   });
 
