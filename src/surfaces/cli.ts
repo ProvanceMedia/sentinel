@@ -16,7 +16,7 @@ const inbound: InboundTurn = {
 };
 
 const mode = process.env.SENTINEL_RUNNER_MODE ?? 'local';
-const model = process.env.SENTINEL_MODEL ?? 'claude-haiku-4-5';
+const model = process.env.SENTINEL_MODEL ?? 'claude-sonnet-4-6';
 console.error(`[sentinel] mode=${mode} model=${model}`);
 console.error(`[you] ${text}`);
 

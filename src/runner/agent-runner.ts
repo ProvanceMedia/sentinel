@@ -106,6 +106,10 @@ async function runTurn(spec: Extract<HostFrame, { t: 'turn_spec' }>) {
   // whose model matches the fallback (e.g. a haiku-pinned job under a haiku fallback).
   if (spec.fallbackModel && spec.fallbackModel !== opts.model) opts.fallbackModel = spec.fallbackModel;
 
+  // Reasoning effort (low|medium|high|xhigh|max). Skip Haiku, which has no effort levels;
+  // other models silently clamp an unsupported level (e.g. xhigh -> high on Sonnet 4.6).
+  if (spec.effort && !/haiku/i.test(opts.model || '')) opts.effort = spec.effort;
+
   // Deterministic tool denial: disallowedTools actually removes the tool (canUseTool
   // is SKIPPED for pre-approved tools like Bash, so it can't be relied on to block them).
   if (spec.toolPolicy?.deny?.length) {
@@ -149,7 +153,7 @@ async function runTurn(spec: Extract<HostFrame, { t: 'turn_spec' }>) {
     } else if (m.type === 'system') {
       if (m.session_id) sessionId = m.session_id;
       if (m.subtype === 'init') {
-        send({ t: 'event', event: { kind: 'init', model: m.model, apiKeySource: m.apiKeySource, sessionId: m.session_id ?? null } });
+        send({ t: 'event', event: { kind: 'init', model: m.model, apiKeySource: m.apiKeySource, sessionId: m.session_id ?? null, effort: opts.effort } });
       }
     } else if (m.type === 'assistant') {
       for (const b of m.message?.content ?? []) {

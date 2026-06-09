@@ -51,7 +51,7 @@ export type AccountInfo = {
 
 // ---- Agent events (runner -> host), a small stable set; SDK upgrades touch only the mapper ----
 export type AgentEvent =
-  | { kind: 'init'; model: string; apiKeySource: string; sessionId: string | null }
+  | { kind: 'init'; model: string; apiKeySource: string; sessionId: string | null; effort?: string }
   | { kind: 'assistant_text'; text: string }
   | { kind: 'tool_use'; name: string; id: string; input?: unknown }
   | { kind: 'status'; text: string }
@@ -82,6 +82,7 @@ export type HostFrame =
       prompt: string;
       model: string;
       fallbackModel?: string;
+      effort?: string;
       appendSystemPrompt?: string;
       allowedTools: string[];
       disallowedTools?: string[];

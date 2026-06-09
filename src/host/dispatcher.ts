@@ -27,8 +27,10 @@ import type { RunnerFrame, ReplyDecision, AccountInfo, ToolPolicy } from '../sha
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const RUNTIME_DIR = process.env.SENTINEL_RUNTIME_DIR ?? path.join(ROOT, '.runtime');
 const MODE = (process.env.SENTINEL_RUNNER_MODE ?? 'local') as 'local' | 'docker';
-const MODEL = process.env.SENTINEL_MODEL ?? 'claude-haiku-4-5';
+const MODEL = process.env.SENTINEL_MODEL ?? 'claude-sonnet-4-6';
 const FALLBACK_MODEL = process.env.SENTINEL_FALLBACK_MODEL ?? '';
+// Default reasoning effort (low|medium|high|xhigh|max). '' = the model's own default.
+const EFFORT = process.env.SENTINEL_EFFORT ?? '';
 const TURN_TIMEOUT_MS = Number(process.env.SENTINEL_TURN_TIMEOUT_MS ?? 180_000);
 const IDLE_MS = Number(process.env.SENTINEL_IDLE_MS ?? 120_000);
 const MAX_ITER = Number(process.env.SENTINEL_MAX_ITER ?? 60);
@@ -44,6 +46,55 @@ const ALLOWED_TOOLS = (process.env.SENTINEL_ALLOWED_TOOLS ?? 'Read,Write,Edit,Ba
   .map((s) => s.trim())
   .filter(Boolean);
 const AUDIT_DIR = path.join(RUNTIME_DIR, 'audit');
+
+// --- Per-conversation model + reasoning effort, set inline from chat and sticky to the
+// thread until changed or cleared. "use opus|sonnet|haiku" picks the model; "ultrathink"
+// or "xhigh" raises effort; "normal effort" / "xhigh off" / "default model" reset. ---
+const MODEL_ALIASES: Record<string, string> = {
+  opus: 'claude-opus-4-8',
+  sonnet: 'claude-sonnet-4-6',
+  haiku: 'claude-haiku-4-5',
+};
+interface ThreadPrefs {
+  model?: string;
+  effort?: string;
+}
+function prefsPath(sessionId: string): string {
+  return path.join(RUNTIME_DIR, 'sessions', sessionId, 'prefs.json');
+}
+function loadPrefs(sessionId: string): ThreadPrefs {
+  try {
+    return JSON.parse(fs.readFileSync(prefsPath(sessionId), 'utf8'));
+  } catch {
+    return {};
+  }
+}
+function savePrefs(sessionId: string, p: ThreadPrefs): void {
+  try {
+    fs.mkdirSync(path.dirname(prefsPath(sessionId)), { recursive: true });
+    fs.writeFileSync(prefsPath(sessionId), JSON.stringify(p));
+  } catch {
+    /* best effort — prefs are a convenience, never block a turn */
+  }
+}
+function parseDirectives(text: string): { model?: string; effort?: string; modelReset?: boolean; effortReset?: boolean } {
+  const t = text || '';
+  const out: { model?: string; effort?: string; modelReset?: boolean; effortReset?: boolean } = {};
+  // Effort: reset wins over escalate, so "xhigh off" de-escalates despite containing "xhigh".
+  if (/\b(?:xhigh|ultrathink|effort)\s+(?:off|stop|normal)\b|\bnormal\s+effort\b/i.test(t)) out.effortReset = true;
+  else {
+    const m = t.match(/\beffort[:=]?\s*(low|medium|high|xhigh|max)\b/i);
+    if (m) out.effort = m[1].toLowerCase();
+    else if (/\b(?:ultrathink|xhigh)\b/i.test(t)) out.effort = 'xhigh';
+  }
+  // Model: explicit "use opus|sonnet|haiku"; "default model" / "reset model" clears the override.
+  if (/\b(?:default|reset)\s+model\b/i.test(t)) out.modelReset = true;
+  else {
+    const m = t.match(/\buse\s+(opus|sonnet|haiku)\b/i);
+    if (m) out.model = MODEL_ALIASES[m[1].toLowerCase()];
+  }
+  return out;
+}
 
 // Host-side init: unseal the vault, load services, register internal tools
 // (memory_search), and assemble the persona once.
@@ -87,7 +138,7 @@ function buildCapabilities(): string {
   '',
   'When asked what is set up or scheduled, actually CALL `sentinel_cron_list` and check your memory — never guess "nothing".',
   'To RUN a scheduled job on demand ("run/trigger X now"), call the `sentinel_cron_run` tool with its id — it hands you the job\'s instructions; carry them out now and reply with the result here. NEVER say you "can\'t trigger it" or invent a trigger/RemoteTrigger API — `sentinel_cron_run` IS the trigger.',
-  'When you CREATE a scheduled job, choose its `model` by load: simple/high-frequency (alerts, every-few-minutes sweeps) → `claude-haiku-4-5`; general/moderate work → `claude-sonnet-4-6` (the balanced middle); infrequent + reasoning-heavy (daily code review, analysis, drafting) → `claude-opus-4-8`; omit for the default. Tell the user which you picked so they can change it.',
+  'When you CREATE a scheduled job, choose its `model` by load: simple/high-frequency (alerts, every-few-minutes sweeps) → `claude-haiku-4-5`; general/moderate work → `claude-sonnet-4-6` (the balanced middle); infrequent + reasoning-heavy (daily code review, analysis, drafting) → `claude-opus-4-8`; omit for the default. ALWAYS tell the user which model you chose AND why, in one line tied to the job\'s load (e.g. "running this on Haiku — it\'s a light every-30-min check" or "Opus for this one — it\'s heavy daily analysis"), so they can change it.',
   '',
   "Your configuration lives in operator-edited files. When asked how to add something, give the Sentinel answer below — do NOT suggest generic Claude Code config (settings.local.json, a project .env, ~/.bashrc, or \"skills\"):",
   '- **API keys / secrets** → the vault: `personal/config/secrets.json` (a flat {"KEY":"value"} map) or a `SENTINEL_VAULT_<KEY>=…` line in `.env`. Secrets stay host-side and never enter your container. You cannot set one from chat — tell the user the exact key name to add.',
@@ -106,6 +157,7 @@ export interface InboundTurn {
   userId: string;
   text: string;
   model?: string; // per-turn model override (e.g. a cron job's own model); falls back to SENTINEL_MODEL
+  effort?: string; // per-turn reasoning effort override (e.g. a cron job's); falls back to SENTINEL_EFFORT
 }
 
 export interface TurnResult {
@@ -209,10 +261,29 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
 
   // Reloaded each turn so persona edits and newly-saved memory apply without a restart.
   const persona = loadPersona();
-  const model = inbound.model || MODEL; // per-turn override (cron jobs carry their own), else the base model
   const runId = crypto.randomUUID().slice(0, 8);
   const sessionId = sessionKey(inbound.conversationId);
   const sessionDir = path.join(RUNTIME_DIR, 'sessions', sessionId);
+
+  // Model + reasoning effort for this turn. A cron/programmatic turn carries its own
+  // (not sticky). A chat turn can set them inline ("use opus", "ultrathink"); the choice
+  // persists to the thread (prefs.json) until changed or cleared ("normal effort"/"default model").
+  let model: string;
+  let effort: string | undefined;
+  if (inbound.model) {
+    model = inbound.model;
+    effort = inbound.effort || EFFORT || undefined;
+  } else {
+    const prefs = loadPrefs(sessionId);
+    const d = parseDirectives(inbound.text);
+    if (d.modelReset) delete prefs.model;
+    else if (d.model) prefs.model = d.model;
+    if (d.effortReset) delete prefs.effort;
+    else if (d.effort) prefs.effort = d.effort;
+    if (d.model || d.effort || d.modelReset || d.effortReset) savePrefs(sessionId, prefs);
+    model = prefs.model || MODEL;
+    effort = prefs.effort || EFFORT || undefined;
+  }
   const runDir = path.join(RUNTIME_DIR, 'run', runId);
   fs.mkdirSync(path.join(sessionDir, 'work'), { recursive: true });
   fs.mkdirSync(runDir, { recursive: true });
@@ -290,6 +361,7 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
           prompt: inbound.text,
           model,
           fallbackModel: FALLBACK_MODEL || undefined,
+          effort: effort || undefined,
           appendSystemPrompt: `${persona.systemPromptAppend}\n\n${CORE_OPERATING}\n\n${buildCapabilities()}`,
           allowedTools: ALLOWED_TOOLS,
           toolPolicy,
@@ -302,7 +374,8 @@ export async function runTurn(inbound: InboundTurn, hooks: DispatchHooks = {}): 
         authOk = account?.tokenSource === auth.expected.tokenSource && account?.apiProvider === auth.expected.apiProvider;
         hooks.onStatus?.(authOk ? `🔐 ${account?.tokenSource}/${account?.apiProvider}` : `⚠️ auth mismatch: ${account?.tokenSource}/${account?.apiProvider}`);
       } else if (f.t === 'event') {
-        if (f.event.kind === 'init') hooks.onStatus?.(`🧠 ${f.event.model} (apiKeySource=${f.event.apiKeySource})`);
+        if (f.event.kind === 'init')
+          hooks.onStatus?.(`🧠 ${f.event.model}${f.event.effort ? ` · ${f.event.effort} effort` : ''} (apiKeySource=${f.event.apiKeySource})`);
         else if (f.event.kind === 'tool_use') {
           toolUses++;
           hooks.onStatus?.(`🔧 ${toolLabel(f.event.name, f.event.input)}`);
