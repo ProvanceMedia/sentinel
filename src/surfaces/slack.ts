@@ -3,6 +3,7 @@
 import { SocketModeClient } from '@slack/socket-mode';
 import { WebClient } from '@slack/web-api';
 import { runTurn, requestStop, type InboundTurn } from '../host/dispatcher';
+import { setSlackPoster } from '../broker/slack-tool';
 
 const STOP_WORDS = new Set(['stop', 'halt', 'abort', 'cancel', 'kill']);
 const STATUS_THROTTLE_MS = 900;
@@ -188,5 +189,6 @@ export async function startSlack(): Promise<SlackSurface> {
 
   await sm.start();
   console.error('[slack] socket mode started — DM the bot or @mention it.');
+  setSlackPoster(deliver); // lets the agent's slack_post tool reach channels via the bot token
   return { deliver };
 }

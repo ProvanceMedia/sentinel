@@ -14,6 +14,7 @@ import { unsealVault, loadServices, allMediatedManifest, handleMediatedCall } fr
 import { loadAuthHosts, authHostsList } from '../broker/auth-hosts';
 import { registerHttpTool } from '../broker/http-call';
 import { registerConnectTool } from '../broker/connect-tool';
+import { registerSlackTool } from '../broker/slack-tool';
 import { startAuthProxy } from './auth-proxy';
 import { registerMemoryTools } from '../memory-core/memory-tool';
 import { registerCronTools } from '../treasury/cron-tools';
@@ -105,6 +106,7 @@ registerMemoryTools();
 registerCronTools();
 registerHttpTool();
 registerConnectTool();
+registerSlackTool();
 if (process.env.SENTINEL_HOSTOPS === 'on') registerHostOps();
 if (process.env.SENTINEL_AUTHPROXY === 'on') startAuthProxy();
 const MEDIATED = allMediatedManifest();
