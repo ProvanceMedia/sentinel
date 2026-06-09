@@ -187,6 +187,18 @@ grep -v '^CLAUDE_CODE_OAUTH_TOKEN=' .env 2>/dev/null > .env.tmp || true
 echo "CLAUDE_CODE_OAUTH_TOKEN=$CLAUDE_CODE_OAUTH_TOKEN" >> .env.tmp
 grep -q '^ANTHROPIC_API_KEY=' .env.tmp || echo "ANTHROPIC_API_KEY=" >> .env.tmp
 grep -q '^SENTINEL_RUNNER_MODE=' .env.tmp || echo "SENTINEL_RUNNER_MODE=docker" >> .env.tmp
+# Timezone for cron schedules — set it so scheduled jobs fire at the right LOCAL time, not UTC.
+if ! grep -q '^SENTINEL_TZ=' .env.tmp; then
+  _dtz=$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo UTC); _dtz=${_dtz:-UTC}
+  if [ "$NONINTERACTIVE" -eq 1 ]; then
+    SENTINEL_TZ="${SENTINEL_TZ:-$_dtz}"
+  else
+    printf "  Timezone for scheduled jobs (IANA name, e.g. Europe/London)?  [%s]  " "$_dtz"
+    read -r _tzin; SENTINEL_TZ="${_tzin:-$_dtz}"
+  fi
+  echo "SENTINEL_TZ=$SENTINEL_TZ" >> .env.tmp
+  ok "timezone for cron schedules: $SENTINEL_TZ  (change it any time in .env)"
+fi
 mv .env.tmp .env; chmod 600 .env
 ok ".env written (chmod 600)"
 
