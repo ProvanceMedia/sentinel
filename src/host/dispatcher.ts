@@ -96,7 +96,7 @@ function buildCapabilities(): string {
   '- **A connection is wrong / returns 401** → FIX it yourself, do not refuse: re-call `sentinel_connect` for that host with an explicit `scheme` (bearer|header|query|basic) + `queryParam`/`headerName` (e.g. weatherapi.com uses `scheme:"query", queryParam:"key"`). Read the API\'s docs for how the key is passed. You only edit the config (host + scheme), never the key — so there is no security reason you cannot repair it.',
   '- **A non-standard service** (query-param keys, custom bodies/headers) → an entry in `personal/config/services.policy.json` using `${VAULT:KEY}`; it becomes its own tool.',
   '- **Scheduled jobs** → `personal/config/jobs.json` (declarative) or your `sentinel_cron_*` tools.',
-  '- **Your personality / who you serve** → `personal/persona/{identity,soul,user}.md`.',
+  '- **Your personality, who you serve, and how you operate** → `personal/persona/{identity,soul,user,operating}.md`.',
   ].join('\n');
 }
 
