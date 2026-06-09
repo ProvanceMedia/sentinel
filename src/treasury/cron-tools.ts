@@ -69,6 +69,51 @@ export function registerCronTools(): void {
   );
 
   registerInternalTool(
+    {
+      name: 'sentinel_cron_update',
+      description:
+        'Edit an existing job in place by id — no need to cancel and recreate. Pass the id plus only the fields to change: prompt, cron, everySeconds, deliverTo, model, description, or enabled (false to pause, true to resume). Changing cron or everySeconds reschedules the next run. Get ids from sentinel_cron_list.',
+      params: {
+        id: { type: 'string', description: 'the job id from sentinel_cron_list' },
+        prompt: { type: 'string', description: 'new instruction for the run', optional: true },
+        cron: { type: 'string', description: 'new cron expression (5 fields); reschedules the next run', optional: true },
+        everySeconds: { type: 'number', description: 'new simple repeat interval in seconds; reschedules the next run', optional: true },
+        deliverTo: { type: 'string', description: 'new Slack channel id (C…) or user id (U…)', optional: true },
+        model: { type: 'string', description: 'new model: claude-haiku-4-5 | claude-sonnet-4-6 | claude-opus-4-8', optional: true },
+        description: { type: 'string', description: 'new short human label', optional: true },
+        enabled: { type: 'boolean', description: 'false to pause the job, true to resume', optional: true },
+      },
+    },
+    async (args) => {
+      const id = String(args.id ?? '');
+      const job = store.get(id);
+      if (!job) return { ok: false, error: `no job with id "${id}" — call sentinel_cron_list for valid ids` };
+      const patch: Partial<store.Job> = {};
+      if (args.prompt !== undefined) patch.prompt = String(args.prompt);
+      if (args.deliverTo !== undefined) patch.deliverTo = String(args.deliverTo);
+      if (args.model !== undefined) patch.model = String(args.model);
+      if (args.description !== undefined) patch.description = String(args.description);
+      if (args.cron !== undefined) {
+        patch.cron = String(args.cron);
+        patch.intervalMs = undefined;
+        patch.runAt = store.nextCron(String(args.cron));
+      } else if (args.everySeconds !== undefined) {
+        patch.intervalMs = Number(args.everySeconds) * 1000;
+        patch.cron = undefined;
+        patch.runAt = Date.now() + Number(args.everySeconds) * 1000;
+      }
+      if (args.enabled !== undefined) {
+        patch.enabled = Boolean(args.enabled);
+        // Re-enabling a cron job: refresh the next run so a stale past runAt doesn't fire it instantly.
+        if (patch.enabled && patch.runAt === undefined && job.cron) patch.runAt = store.nextCron(job.cron);
+      }
+      store.update(id, patch);
+      const j = store.get(id)!;
+      return { ok: true, data: `updated job ${id}${j.runAt ? ` — next run ${new Date(j.runAt).toISOString()}` : ''}` };
+    },
+  );
+
+  registerInternalTool(
     { name: 'sentinel_cron_cancel', description: 'Cancel a scheduled job by id.', params: { id: { type: 'string', description: 'the job id' } } },
     async (args) => {
       store.remove(String(args.id ?? ''));
