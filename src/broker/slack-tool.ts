@@ -1,5 +1,5 @@
 // Mediated slack_post tool — lets the boxed agent post a message to a Slack channel
-// or DM mid-run (e.g. status/alerts to #outbound during a long cron), using the
+// or DM mid-run (e.g. status/alerts to #ops during a long cron), using the
 // daemon's bot token host-side. The poster is wired by the Slack surface at startup;
 // when Slack isn't running (CLI-only) the tool reports that cleanly instead of failing.
 import { registerInternalTool } from './index';
@@ -16,7 +16,7 @@ export function registerSlackTool(): void {
     {
       name: 'slack_post',
       description:
-        'Post a message to a Slack channel or user DM right now — use for status/alerts to a channel (e.g. #outbound) during a long run. `channel` is a Slack channel id (C…/G…) or user id (U…). `text` uses Slack mrkdwn: *bold*, _italic_, <url|label>, <@USERID> to mention someone. Returns once posted.',
+        'Post a message to a Slack channel or user DM right now — use for status/alerts to a channel (e.g. #ops) during a long run. `channel` is a Slack channel id (C…/G…) or user id (U…). `text` uses Slack mrkdwn: *bold*, _italic_, <url|label>, <@USERID> to mention someone. Returns once posted.',
       params: {
         channel: { type: 'string', description: 'channel id (C…/G…) or user id (U…) to post to' },
         text: { type: 'string', description: 'message text in Slack mrkdwn' },
